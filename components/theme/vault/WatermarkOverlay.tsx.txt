@@ -1,0 +1,144 @@
+// =============================================================================
+// MIDDLEMAN.COM — WATERMARKING SYSTEM
+// Path: @/components/vault/WatermarkOverlay.tsx
+//
+// Wraps confidential content (CIM viewer, Deal Room video call) with a
+// tiled, semi-transparent watermark showing the viewer's email + IP +
+// live timestamp. Values come ONLY from the server (log-document-view Edge
+// Function) — never rendered from client-guessable state, since the whole
+// point is to trace leaks back to a specific verified session.
+//
+// Usage:
+//   <WatermarkOverlay listingId={listing.id} sessionType="CIM_VIEW">
+//     <CimDocumentViewer url={cimUrl} />
+//   </WatermarkOverlay>
+// =============================================================================
+
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { createClient } from "@/lib/supabase/client";
+import type { AppError, WatermarkData, WatermarkOverlayProps } from "@/types";
+
+// -----------------------------------------------------------------------------
+// Component
+// -----------------------------------------------------------------------------
+export default function WatermarkOverlay({
+  listingId,
+  sessionType,
+  children,
+  refreshIntervalMs = 60_000,
+}: WatermarkOverlayProps) {
+  const [watermark, setWatermark] = useState<WatermarkData | null>(null);
+  const [clock, setClock] = useState<string>("");
+  const [error, setError] = useState<AppError | null>(null);
+
+  const fetchWatermark = useCallback(async () => {
+    try {
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        setError({ code: "NO_SESSION", message: "You must be signed in to view this content." });
+        return;
+      }
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/log-document-view`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ listing_id: listingId, session_type: sessionType }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        setError({
+          code: "WATERMARK_LOG_FAILED",
+          message: result.error ?? "Could not verify this viewing session.",
+        });
+        return;
+      }
+
+      setWatermark(result.watermark);
+      setError(null);
+    } catch (err) {
+      setError({
+        code: "NETWORK_ERROR",
+        message: err instanceof Error ? err.message : "Failed to load watermark session.",
+      });
+    }
+  }, [listingId, sessionType]);
+
+  // Initial fetch + periodic re-verification (also re-captures IP in case
+  // the buyer switches networks/VPN mid-session).
+  useEffect(() => {
+    fetchWatermark();
+    const interval = setInterval(fetchWatermark, refreshIntervalMs);
+    return () => clearInterval(interval);
+  }, [fetchWatermark, refreshIntervalMs]);
+
+  // Client-side ticking clock for display only (does not replace the
+  // server-verified server_timestamp used for the audit log itself).
+  useEffect(() => {
+    const tick = () => setClock(new Date().toLocaleString());
+    tick();
+    const clockInterval = setInterval(tick, 1000);
+    return () => clearInterval(clockInterval);
+  }, []);
+
+  // Fail closed: without a verified watermark session, confidential content
+  // must not be shown at all.
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-[300px] rounded-lg border border-red-500/30 bg-[#111827] p-8 text-center">
+        <p className="text-sm text-red-400">
+          {error.message} Please refresh the page or contact support if this persists.
+        </p>
+      </div>
+    );
+  }
+
+  if (!watermark) {
+    return (
+      <div className="flex items-center justify-center min-h-[300px] rounded-lg bg-[#111827]">
+        <p className="text-sm text-slate-400">Verifying secure session…</p>
+      </div>
+    );
+  }
+
+  const watermarkLabel = `${watermark.email} · ${watermark.ip_address} · ${clock}`;
+
+  return (
+    <div className="relative overflow-hidden rounded-lg">
+      {/* Protected content sits below the overlay */}
+      <div className="relative z-0">{children}</div>
+
+      {/* Tiled watermark layer — pointer-events-none so it never blocks interaction */}
+      <div
+        className="pointer-events-none absolute inset-0 z-10 select-none overflow-hidden"
+        aria-hidden="true"
+      >
+        <div
+          className="grid h-[200%] w-[200%] -translate-x-1/4 -translate-y-1/4 rotate-[-20deg] grid-cols-3 gap-16 opacity-[0.12]"
+        >
+          {Array.from({ length: 24 }).map((_, i) => (
+            <span
+              key={i}
+              className="whitespace-nowrap text-xs font-medium text-white"
+            >
+              {watermarkLabel}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

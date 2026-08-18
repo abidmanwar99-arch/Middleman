@@ -1,0 +1,58 @@
+/* =============================================================================
+   MIDDLEMAN.COM — GLOBAL THEME TOKENS
+   Path: app/globals.css
+   Two theme classes ("dark" / "light") are applied to <html> by
+   ThemeProvider / the no-flash script. Every color in the app should
+   reference these CSS variables — never hardcode a hex value in a component.
+============================================================================= */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-body: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), "IBM Plex Mono", monospace;
+}
+
+.dark {
+  --bg: #0a0f1e;
+  --surface: #111827;
+  --border: #1f2937;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --accent: #2563eb;
+  --gold: #f59e0b;
+  --success: #10b981;
+}
+
+.light {
+  --bg: #ffffff;
+  --surface: #f8fafc;
+  --border: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --accent: #2563eb;
+  --gold: #b45309;
+  --success: #059669;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+}
+
+/* Redaction bar utility used by the Hero Sandbox signature animation */
+.redact-bar {
+  background-color: currentColor;
+  color: var(--text-primary);
+  border-radius: 2px;
+  transition: clip-path 0.5s ease, background-color 0.5s ease;
+  clip-path: inset(0 100% 0 0);
+}
+
+.redact-bar.is-redacted {
+  clip-path: inset(0 0 0 0);
+}
